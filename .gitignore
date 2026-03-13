@@ -1,0 +1,23 @@
+# .gitignore
+
+# Node modules
+node_modules/
+.npm/
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+
+# Python & TEE Environment
+tee-backend/__pycache__/
+tee-backend/venv/
+tee-backend/.env
+
+# Hardhat/Foundry (Smart Contracts) artifacts
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/.env
+
+# OS generated files
+.DS_Store
