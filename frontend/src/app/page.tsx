@@ -1,10 +1,12 @@
 "use client"; // Next.js 14'te state kullanmak için bu satır zorunludur
 
+import { ESCROW_CONTRACT_ADDRESS, ESCROW_ABI } from "@/lib/constants"
 import React, { useState } from 'react';
 import { ethers } from 'ethers';
 
 export default function Home() {
   // --- DURUM YÖNETİMİ (STATE) ---
+  const [isTransactionPending, setIsTransactionPending] = useState(false); // İşlem yükleniyor efekti için
   const [wallet, setWallet] = useState<string | null>(null);
   const [messages, setMessages] = useState([
     { role: 'system', text: '> System initialized inside Trusted Execution Environment (Dstack).' },
@@ -33,6 +35,39 @@ export default function Home() {
       alert("Please install MetaMask to use MindVault.");
     }
   };
+
+  const handleLockFunds = async () => {
+  if (!window.ethereum) return alert("MetaMask is not installed!");
+
+  try {
+    setIsTransactionPending(true);
+    
+    // 1. Ethers.js Provider ve Signer kurulumu
+    const provider = new ethers.BrowserProvider(window.ethereum as any);
+    const signer = await provider.getSigner();
+
+    // 2. Akıllı Kontrat objesini oluşturuyoruz (Adres + ABI + Signer)
+    const escrowContract = new ethers.Contract(ESCROW_CONTRACT_ADDRESS, ESCROW_ABI, signer);
+
+    // 3. Kullanıcıya bildirim verip işlemi başlatıyoruz
+    const valueToLock = ethers.parseEther("2.5"); // 2.5 ETH'yi Wei cinsine çevirir
+    console.log("Initiating lockFunds transaction...");
+
+    // 4. Kontrattaki lockFunds fonksiyonunu çağırıyoruz (MetaMask onay penceresi açılır)
+    const tx = await escrowContract.lockFunds({ value: valueToLock });
+    
+    // 5. İşlemin blockchain'e kazılmasını (mine edilmesini) bekliyoruz
+    await tx.wait();
+    
+    alert("Success! 2.5 ETH locked in the Smart Contract securely.");
+    
+  } catch (error) {
+    console.error("Transaction failed:", error);
+    alert("Transaction failed or rejected by user.");
+  } finally {
+    setIsTransactionPending(false);
+  }
+};
 
   // --- YAPAY ZEKA İLE SOHBET ---
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -134,14 +169,18 @@ export default function Home() {
             </div>
             
             {/* Lock Funds Butonu */}
-            <button 
-              disabled={!wallet}
-              className={`w-full font-bold px-4 py-3 rounded mt-8 border transition-colors flex justify-center items-center gap-2 ${
-                wallet ? 'bg-blue-900 hover:bg-blue-800 text-white border-blue-500' : 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed'
-              }`}
-            >
-              Lock 2.5 ETH & Reveal
-            </button>
+         {/* GÜNCELLENEN BUTON */}
+          <button 
+           onClick={handleLockFunds}
+           disabled={!wallet || isTransactionPending}
+           className={`w-full font-bold px-4 py-3 rounded mt-8 border transition-colors flex justify-center items-center gap-2 ${
+           wallet && !isTransactionPending
+          ? 'bg-blue-900 hover:bg-blue-800 text-white border-blue-500' 
+          : 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed'
+          }`}
+           >
+          {isTransactionPending ? "Locking Funds... (Confirm in Wallet)" : "Lock 2.5 ETH & Reveal"}
+         </button>
           </div>
         </div>
       </div>
