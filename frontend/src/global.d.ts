@@ -1,4 +1,10 @@
 // src/global.d.ts
-interface Window {
-  ethereum?: any;
+import type { Eip1193Provider } from "ethers";
+
+declare global {
+  interface Window {
+    ethereum?: Eip1193Provider;
+  }
 }
+
+export {};

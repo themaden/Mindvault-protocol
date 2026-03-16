@@ -3,7 +3,13 @@
 
 import React, { useState } from 'react';
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 export default function UploadPage() {
+  const BACKEND_URL = process.env.NEXT_PUBLIC_TEE_BACKEND_URL ?? "http://localhost:8000";
   const [sourceCode, setSourceCode] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [devProof, setDevProof] = useState<string | null>(null);
@@ -19,7 +25,7 @@ export default function UploadPage() {
 
     try {
       // Python FastAPI sunucumuza POST isteği atıyoruz
-      const response = await fetch("http://localhost:8000/api/v1/upload-code", {
+      const response = await fetch(`${BACKEND_URL}/api/v1/upload-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_code: sourceCode }),
@@ -33,8 +39,8 @@ export default function UploadPage() {
 
       // Başarılı olursa DevProof hash'ini ekrana yansıt
       setDevProof(data.dev_proof);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setIsUploading(false);
     }
@@ -46,7 +52,7 @@ export default function UploadPage() {
       {/* HEADER */}
       <div className="w-full max-w-4xl flex justify-between items-center mb-8 border-b border-green-800 pb-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tighter text-white">Inventor's Dashboard</h1>
+          <h1 className="text-3xl font-bold tracking-tighter text-white">Inventor Dashboard</h1>
           <p className="text-sm text-green-600">Upload your logic. Generate DevProof. Sell securely.</p>
         </div>
         <a href="/" className="text-gray-400 hover:text-white underline transition-colors">
