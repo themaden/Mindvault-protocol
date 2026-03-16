@@ -2,16 +2,21 @@
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import hashlib
 from web3 import Web3
 from eth_account import Account
 from eth_account.messages import encode_defunct
-from dotenv import load_dotenv
 from openai import OpenAI
 
-# Load environment variables (API Keys) from .env file
+try:
+    # Optional dependency: lets local dev load DEEPSEEK_API_KEY from a .env file.
+    from dotenv import load_dotenv  # type: ignore
+except Exception:
+    def load_dotenv(*_args, **_kwargs) -> bool:
+        return False
+
+# Load environment variables (API Keys) from .env file (best-effort).
 load_dotenv()
 
 app = FastAPI(title="MindVault TEE AI Agent", version="1.0.0")
@@ -28,10 +33,11 @@ app.add_middleware(
 )
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-if not DEEPSEEK_API_KEY:
-    raise ValueError("CRITICAL: DEEPSEEK_API_KEY is not set in the .env file!")
-
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+client = (
+    OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+    if DEEPSEEK_API_KEY
+    else None
+)
 
 # --- MOCK TEE ENCLAVE CRYPTOGRAPHY ---
 TEE_PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -70,7 +76,10 @@ STRICT RULES:
 @app.on_event("startup")
 async def startup_event():
     print(f"[*] TEE Oracle Address: {tee_account.address}")
-    print("[*] DeepSeek LLM Engine Initialized successfully.")
+    if client is None:
+        print("[!] DEEPSEEK_API_KEY is not set; /api/v1/ask-ndai will return an error.")
+    else:
+        print("[*] DeepSeek LLM Engine Initialized successfully.")
 
 @app.post("/api/v1/upload-code", summary="Seller uploads code to TEE")
 async def upload_code_to_enclave(payload: CodeUpload):
@@ -94,6 +103,8 @@ async def ask_ndai_agent(payload: AskQuestion):
     """
     if not secure_enclave["is_locked"]:
         raise HTTPException(status_code=400, detail="No code loaded.")
+    if client is None:
+        raise HTTPException(status_code=500, detail="DEEPSEEK_API_KEY is not configured on the server.")
     
     try:
         # Construct the context for DeepSeek
