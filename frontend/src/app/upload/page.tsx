@@ -1,136 +1,22 @@
+// frontend/src/app/upload/page.tsx
 "use client";
 
-import React, { useState } from "react";
-import { CopyField } from "../../components/mindvault/CopyField";
-import { getErrorMessage } from "../../lib/errors";
+import React, { useState } from 'react';
 
-/* ─── Icons ──────────────────────────────────────────────────────────────── */
-const UploadIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="17 8 12 3 7 8" />
-    <line x1="12" y1="3" x2="12" y2="15" />
-  </svg>
-);
-
-const CodeIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="16 18 22 12 16 6" />
-    <polyline points="8 6 2 12 8 18" />
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 6 9 17l-5-5" />
-  </svg>
-);
-
-const HashIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="4" y1="9" x2="20" y2="9" />
-    <line x1="4" y1="15" x2="20" y2="15" />
-    <line x1="10" y1="3" x2="8" y2="21" />
-    <line x1="16" y1="3" x2="14" y2="21" />
-  </svg>
-);
-
-/* ─── Step indicator ─────────────────────────────────────────────────────── */
-function Step({
-  num,
-  label,
-  active,
-  done,
-}: {
-  num: number;
-  label: string;
-  active: boolean;
-  done: boolean;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "0.6rem",
-        opacity: done || active ? 1 : 0.35,
-      }}
-    >
-      <div
-        style={{
-          width: "26px",
-          height: "26px",
-          borderRadius: "50%",
-          border: `1px solid ${done ? "var(--phos)" : active ? "var(--gold)" : "rgba(0,255,135,0.2)"}`,
-          background: done
-            ? "rgba(0,255,135,0.1)"
-            : active
-            ? "rgba(201,168,76,0.08)"
-            : "transparent",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          transition: "all 0.3s ease",
-        }}
-      >
-        {done ? (
-          <span style={{ width: "12px", height: "12px", color: "var(--phos)", display: "inline-flex" }}>
-            <CheckIcon />
-          </span>
-        ) : (
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.6rem",
-              fontWeight: 700,
-              color: active ? "var(--gold)" : "var(--text-muted)",
-            }}
-          >
-            {num}
-          </span>
-        )}
-      </div>
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "0.65rem",
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: done ? "var(--phos-dim)" : active ? "var(--gold)" : "var(--text-muted)",
-        }}
-      >
-        {label}
-      </span>
-    </div>
-  );
-}
-
-/* ─── Upload Page ────────────────────────────────────────────────────────── */
 export default function UploadPage() {
-  const BACKEND_URL =
-    process.env.NEXT_PUBLIC_TEE_BACKEND_URL ?? "http://localhost:8000";
-
   const [sourceCode, setSourceCode] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [devProof, setDevProof] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [charCount, setCharCount] = useState(0);
-
-  const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setSourceCode(e.target.value);
-    setCharCount(e.target.value.length);
-  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sourceCode.trim()) return;
-
     setIsUploading(true);
     setError(null);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/v1/upload-code`, {
+      const response = await fetch("http://localhost:8000/api/v1/upload-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_code: sourceCode }),
@@ -138,361 +24,90 @@ export default function UploadPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Upload failed");
       setDevProof(data.dev_proof);
-    } catch (err: unknown) {
-      setError(getErrorMessage(err));
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setIsUploading(false);
     }
   };
 
-  const step1Done = Boolean(sourceCode.trim());
-  const step2Done = isUploading || Boolean(devProof);
-  const step3Done = Boolean(devProof);
-
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "2rem 1.25rem 3rem",
-        position: "relative",
-        zIndex: 1,
-      }}
-    >
-      <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+    // Modern Dark Gradient Arkaplan
+    <main className="min-h-screen bg-[#0B0F19] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#1A233A] via-[#0B0F19] to-black text-slate-300 font-sans p-8 flex flex-col items-center selection:bg-cyan-500/30">
+      
+      {/* HEADER */}
+      <div className="w-full max-w-4xl flex justify-between items-center mb-12">
+        <div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 mb-1">
+            Inventor Workspace
+          </h1>
+          <p className="text-sm text-slate-400 font-medium">Encrypt your logic. Generate cryptographic proof.</p>
+        </div>
+        <a href="/" className="px-5 py-2.5 text-sm font-semibold rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all backdrop-blur-md">
+          Switch to Buyer View &rarr;
+        </a>
+      </div>
 
-        {/* ── HEADER ──────────────────────────────────────────────────── */}
-        <header
-          className="mv-card mv-fade-up"
-          style={{ padding: "1.75rem 2rem", marginBottom: "2rem" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "1.25rem",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-              <div
-                className="mv-logomark"
-                style={{
-                  background:
-                    "linear-gradient(135deg, rgba(201,168,76,0.1), rgba(0,255,135,0.06))",
-                  borderColor: "rgba(201,168,76,0.2)",
-                }}
-              >
-                <span style={{ color: "var(--gold)", display: "inline-flex", width: "22px", height: "22px" }}>
-                  <CodeIcon />
-                </span>
-              </div>
-              <div>
-                <h1
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontSize: "clamp(1.4rem, 3vw, 2rem)",
-                    fontWeight: 700,
-                    color: "var(--text-primary)",
-                    letterSpacing: "0.06em",
-                    lineHeight: 1,
-                  }}
-                >
-                  Inventor Dashboard
-                </h1>
-                <p
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "0.62rem",
-                    letterSpacing: "0.2em",
-                    color: "var(--gold-dim)",
-                    textTransform: "uppercase",
-                    marginTop: "0.3rem",
-                  }}
-                >
-                  Upload your logic — Lock it in the Enclave
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <div
-                className={`mv-status ${devProof ? "mv-status-active" : "mv-status-idle"}`}
-              >
-                <span className="mv-status-dot" />
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "0.62rem",
-                    letterSpacing: "0.12em",
-                    color: devProof ? "var(--phos)" : "var(--text-muted)",
-                  }}
-                >
-                  {devProof ? "LOCKED" : "READY"}
-                </span>
-              </div>
-              <a href="/" className="mv-btn" style={{ textDecoration: "none" }}>
-                ← Buyer Terminal
-              </a>
-            </div>
+      {/* GLASSMORPHISM UPLOAD CARD */}
+      <div className="w-full max-w-4xl bg-white/[0.02] backdrop-blur-xl border border-white/[0.05] rounded-3xl p-8 shadow-[0_8px_32px_0_rgba(0,0,0,0.36)]">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+            <span className="text-blue-400 font-bold">1</span>
           </div>
-
-          {/* Step progress */}
-          <div
-            style={{
-              marginTop: "1.5rem",
-              paddingTop: "1.25rem",
-              borderTop: "1px solid rgba(0,255,135,0.07)",
-              display: "flex",
-              gap: "2rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <Step num={1} label="Paste your code" active={!step1Done} done={step1Done} />
-            <Step num={2} label="Lock in enclave" active={step1Done && !step2Done} done={step2Done} />
-            <Step num={3} label="Share DevProof" active={step2Done && !step3Done} done={step3Done} />
-          </div>
-        </header>
-
-        {/* ── EDITOR CARD ──────────────────────────────────────────────── */}
-        <div className="mv-card mv-fade-up-1" style={{ overflow: "visible" }}>
-
-          {/* Card header bar */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0.85rem 1.25rem",
-              background: "rgba(0,0,0,0.2)",
-              borderBottom: "1px solid rgba(0,255,135,0.07)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(255,69,96,0.6)" }} />
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(255,189,46,0.6)" }} />
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "rgba(0,255,135,0.5)" }} />
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.62rem",
-                  color: "var(--text-muted)",
-                  marginLeft: "0.5rem",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                secure_enclave.sol
-              </span>
-            </div>
-            {charCount > 0 && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.6rem",
-                  color: "var(--text-muted)",
-                }}
-              >
-                {charCount.toLocaleString()} chars
-              </span>
-            )}
-          </div>
-
-          {/* Code editor */}
-          <div style={{ padding: "0" }}>
-            <textarea
-              value={sourceCode}
-              onChange={handleCodeChange}
-              placeholder={
-                "// Paste your highly confidential code here...\n// e.g. contract SuperSecretLogic {\n//   function reveal() external { ... }\n// }"
-              }
-              disabled={devProof !== null || isUploading}
-              style={{
-                display: "block",
-                width: "100%",
-                minHeight: "340px",
-                background: "transparent",
-                border: "none",
-                outline: "none",
-                padding: "1.25rem 1.5rem",
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.8rem",
-                lineHeight: "1.8",
-                color: "var(--phos-text)",
-                resize: "vertical",
-                opacity: devProof ? 0.45 : 1,
-              }}
-            />
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div
-              style={{
-                margin: "0 1.25rem 1rem",
-                borderRadius: "8px",
-                border: "1px solid rgba(255,69,96,0.3)",
-                background: "rgba(127,29,29,0.15)",
-                padding: "0.6rem 0.9rem",
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.72rem",
-                color: "rgba(255,120,140,0.9)",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-              }}
-            >
-              <span style={{ color: "var(--danger)" }}>ERR:</span> {error}
-            </div>
-          )}
-
-          {/* Action bar */}
-          <div
-            style={{
-              padding: "1rem 1.25rem",
-              borderTop: "1px solid rgba(0,255,135,0.07)",
-              background: "rgba(0,0,0,0.15)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "1rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <span className="mv-badge">AES-256 in-memory</span>
-              <span className="mv-badge">SHA-3 DevProof</span>
-              <span className="mv-badge mv-badge-gold">TEE isolated</span>
-            </div>
-
-            <button
-              onClick={handleUpload}
-              disabled={devProof !== null || isUploading || !sourceCode.trim()}
-              className={`mv-btn ${devProof ? "" : "mv-btn-gold"}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.65rem 1.5rem",
-                minWidth: "200px",
-                justifyContent: "center",
-              }}
-            >
-              <span style={{ width: "14px", height: "14px", display: "inline-flex" }}>
-                {devProof ? <CheckIcon /> : <UploadIcon />}
-              </span>
-              {isUploading
-                ? "Uploading to enclave..."
-                : devProof
-                ? "Code Locked"
-                : "Lock Code & Generate DevProof"}
-            </button>
+          <div>
+            <h2 className="text-xl font-bold text-white">Secure Enclave Vault</h2>
+            <p className="text-xs text-slate-400">Your code never leaves the TEE. Only the hash is exposed.</p>
           </div>
         </div>
 
-        {/* ── DEV PROOF RESULT ──────────────────────────────────────────── */}
-        {devProof && (
-          <div
-            className="mv-card mv-glow-green mv-fade-up"
-            style={{ marginTop: "1.5rem", padding: "1.5rem" }}
+        <form onSubmit={handleUpload} className="space-y-6">
+          <div className="relative group">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+            <textarea
+              value={sourceCode}
+              onChange={(e) => setSourceCode(e.target.value)}
+              placeholder="// Paste your highly confidential smart contract or algorithm here...&#10;contract SuperSecretLogic { ... }"
+              className="relative w-full h-72 bg-[#0a0d14] border border-slate-800 rounded-2xl p-6 text-cyan-300 focus:outline-none focus:border-cyan-500/50 font-mono text-sm resize-none placeholder-slate-700 shadow-inner"
+              disabled={devProof !== null || isUploading}
+            />
+          </div>
+
+          {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">{error}</div>}
+
+          <button 
+            type="submit" 
+            disabled={devProof !== null || isUploading || !sourceCode.trim()}
+            className={`w-full font-bold px-6 py-4 rounded-xl transition-all duration-300 flex justify-center items-center gap-2 ${
+              devProof 
+                ? 'bg-slate-800/50 text-slate-500 border border-slate-700 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]'
+            }`}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "1rem",
-                marginBottom: "1.25rem",
-              }}
-            >
-              <div
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "10px",
-                  background: "rgba(0,255,135,0.08)",
-                  border: "1px solid rgba(0,255,135,0.2)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <span style={{ width: "20px", height: "20px", color: "var(--phos)", display: "inline-flex" }}>
-                  <HashIcon />
-                </span>
-              </div>
-              <div>
-                <h2
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontSize: "1.1rem",
-                    fontWeight: 600,
-                    color: "var(--text-primary)",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  DevProof Generated
-                </h2>
-                <p
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "0.82rem",
-                    color: "var(--text-secondary)",
-                    marginTop: "0.25rem",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Your code is now sealed in the enclave. Share this hash with buyers — it
-                  cryptographically identifies the exact logic they're purchasing.
-                </p>
-              </div>
-            </div>
+            {isUploading ? (
+              <span className="animate-pulse">Encrypting & Transmitting to TEE...</span>
+            ) : devProof ? (
+              "Locked in Hardware Enclave"
+            ) : (
+              "Lock Code & Generate DevProof"
+            )}
+          </button>
+        </form>
 
-            <CopyField label="Dev Proof" value={devProof} />
-
-            <div
-              style={{
-                marginTop: "1rem",
-                display: "flex",
-                gap: "0.6rem",
-                flexWrap: "wrap",
-              }}
-            >
-              <span className="mv-badge">
-                Enclave: Active
-              </span>
-              <span className="mv-badge">
-                Hash verified
-              </span>
-              <span className="mv-badge mv-badge-gold">
-                Ready for buyers
-              </span>
+        {/* ELEGANT DEVPROOF RESULT */}
+        {devProof && (
+          <div className="mt-10 p-6 border border-emerald-500/30 bg-emerald-500/5 rounded-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h3 className="text-lg font-bold text-emerald-400 mb-2 flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              DevProof Generated Successfully
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Share this immutable hash with your buyers. It proves the exact state of your logic inside the enclave.
+            </p>
+            <div className="bg-black/50 border border-emerald-500/20 p-4 rounded-xl flex justify-between items-center group hover:border-emerald-500/50 transition-colors">
+              <span className="text-emerald-300 font-mono text-sm break-all">{devProof}</span>
             </div>
           </div>
         )}
-
-        {/* ── FOOTER ───────────────────────────────────────────────────── */}
-        <footer
-          style={{
-            marginTop: "3rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "0.75rem",
-          }}
-        >
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.6rem",
-              color: "var(--text-muted)",
-              letterSpacing: "0.1em",
-            }}
-          >
-            © 2024 MindVault Protocol — Inventor Dashboard
-          </p>
-          <span className="mv-badge mv-badge-gold">Oasis ROFL</span>
-        </footer>
       </div>
     </main>
   );
