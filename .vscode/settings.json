@@ -1,0 +1,6 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/tee-backend/venv/bin/python",
+    "python.analysis.venvPath": "${workspaceFolder}/tee-backend",
+    "python.analysis.venv": "venv",
+    "python.terminal.activateEnvironment": true
+}
