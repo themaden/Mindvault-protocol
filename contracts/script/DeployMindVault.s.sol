@@ -6,20 +6,21 @@ import {MindVaultEscrow} from "../src/MindVaultEscrow.sol";
 
 contract DeployMindVault is Script {
     function run() public {
-        // Anvil'in bize sağladığı varsayılan 0 numaralı cüzdanın Private Key'i
-        // (Bunu asla gerçek ağda kullanma, sadece yerel test içindir!)
+
+        // Private key of the default wallet (index 0) provided by Anvil
+        // (Never use this on a real network, it is only for local testing!)
         uint256 deployerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         
-        // TEE Oracle Adresi (Python backend'imizin "startup" anında verdiği adres)
-        address teeOracle = 0x1234567890123456789012345678901234567890; 
+        // TEE Oracle Address (the address given by our Python backend during startup)
+        address teeOracle = 0x1234567890123456789012345678901234567890;
 
-        // Yayın (Broadcast) başlatıyoruz. Bu noktadan sonraki her şey blokzincire kazınır.
+        // We start the broadcast. Everything after this point will be written to the blockchain.
         vm.startBroadcast(deployerPrivateKey);
 
-        // Satıcı adresi olarak kontratı yükleyen kişiyi (kendimizi) belirliyoruz
-        address seller = vm.addr(deployerPrivateKey); 
+        // We set the seller address as the person deploying the contract (ourselves)
+        address seller = vm.addr(deployerPrivateKey);
 
-        // Ve muazzam kontratımız blokzincire doğuyor!
+        // And our magnificent contract is born on the blockchain!
         MindVaultEscrow escrow = new MindVaultEscrow(seller, teeOracle);
 
         console.log("-----------------------------------------");
