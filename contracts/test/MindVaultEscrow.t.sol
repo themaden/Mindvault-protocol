@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
 import {MindVaultEscrow} from "../src/MindVaultEscrow.sol";
+import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract MindVaultEscrowTest is Test {
     MindVaultEscrow public escrow;
@@ -10,9 +11,11 @@ contract MindVaultEscrowTest is Test {
     // Mock addresses for our actors
     address public seller = address(0x1);
     address public buyer = address(0x2);
-    address public teeOracle = address(0x3);
+    uint256 private teeOraclePrivateKey = 0xBEEF;
+    address public teeOracle;
 
     function setUp() public {
+        teeOracle = vm.addr(teeOraclePrivateKey);
         // Deploy the contract before each test is executed
         escrow = new MindVaultEscrow(seller, teeOracle);
         
@@ -39,9 +42,14 @@ contract MindVaultEscrowTest is Test {
 
         uint256 initialSellerBalance = seller.balance;
 
-        // Step 2: Simulate the TEE AI (Oracle) approving the transaction
-        vm.prank(teeOracle);
-        escrow.releaseFunds();
+        // Step 2: Simulate the TEE AI (Oracle) approving by signing the expected message.
+        bytes32 messageHash = keccak256(abi.encodePacked("MindVault_Release_Funds", buyer));
+        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(teeOraclePrivateKey, ethSignedMessageHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // Relayer identity does not matter; signature authenticity does.
+        escrow.releaseFundsWithSignature(signature);
 
         // Step 3: Verify the seller received the funds and escrow is empty
         assertEq(seller.balance, initialSellerBalance + 2 ether);
@@ -54,12 +62,14 @@ contract MindVaultEscrowTest is Test {
         vm.prank(buyer);
         escrow.lockFunds{value: 1 ether}();
 
-        // A malicious hacker tries to release the funds
-        address hacker = address(0x4);
-        vm.prank(hacker);
-        
-        // The test expects the next call to fail with this exact message
-        vm.expectRevert("Only TEE AI can release funds");
-        escrow.releaseFunds();
+        // A malicious hacker tries to release the funds with an invalid signature.
+        uint256 hackerPrivateKey = 0xCAFE;
+        bytes32 messageHash = keccak256(abi.encodePacked("MindVault_Release_Funds", buyer));
+        bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(hackerPrivateKey, ethSignedMessageHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.expectRevert("Invalid TEE AI Signature");
+        escrow.releaseFundsWithSignature(signature);
     }
 }
