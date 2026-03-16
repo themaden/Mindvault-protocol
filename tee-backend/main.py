@@ -2,6 +2,8 @@
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import hashlib
 from web3 import Web3
 from eth_account import Account
@@ -16,6 +18,15 @@ app = FastAPI(title="MindVault TEE AI Agent", version="1.0.0")
 
 # --- DEEPSEEK LLM SETUP ---
 # DeepSeek API is fully compatible with the OpenAI SDK. We just change the base_url.
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, change this to your specific frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 if not DEEPSEEK_API_KEY:
     raise ValueError("CRITICAL: DEEPSEEK_API_KEY is not set in the .env file!")
