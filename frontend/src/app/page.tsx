@@ -1,136 +1,190 @@
-// frontend/src/app/page.tsx
 "use client";
 
-import React, { useState } from 'react';
-import { ethers } from 'ethers';
-import { ESCROW_CONTRACT_ADDRESS, ESCROW_ABI } from '../lib/constants';
+import React, { useState } from "react";
+import { ethers } from "ethers";
+import { ESCROW_CONTRACT_ADDRESS, ESCROW_ABI } from "../lib/constants";
+import { INITIAL_MESSAGES, type ChatMessage } from "../lib/chat";
+import { getErrorMessage } from "../lib/errors";
+import { EscrowPanel } from "../components/mindvault/EscrowPanel";
+import { TerminalChat } from "../components/mindvault/TerminalChat";
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+/* ─── SVG Icons ─────────────────────────────────────────────────────────── */
+const VaultIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    <circle cx="12" cy="16" r="1" />
+  </svg>
+);
+
+const ChipIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="6" height="6" />
+    <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+
+const ShieldIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <path d="m9 12 2 2 4-4" />
+  </svg>
+);
+
+const WalletIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+    <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+    <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+  </svg>
+);
+
+/* ─── Stat Card ─────────────────────────────────────────────────────────── */
+function StatCard({
+  label,
+  value,
+  sub,
+  gold,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  gold?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        background: "linear-gradient(145deg, rgba(10,21,24,0.9), rgba(6,14,16,0.95))",
+        border: `1px solid ${gold ? "rgba(201,168,76,0.18)" : "rgba(0,255,135,0.1)"}`,
+        borderRadius: "12px",
+        padding: "0.85rem 1rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.2rem",
+      }}
+    >
+      <p
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "0.6rem",
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          color: gold ? "var(--gold-dim)" : "var(--text-muted)",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: "1.05rem",
+          fontWeight: 700,
+          color: gold ? "var(--gold)" : "var(--phos)",
+          lineHeight: 1.2,
+        }}
+      >
+        {value}
+      </p>
+      {sub && (
+        <p
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "0.6rem",
+            color: "var(--text-muted)",
+          }}
+        >
+          {sub}
+        </p>
+      )}
+    </div>
+  );
 }
 
+/* ─── Main Page ─────────────────────────────────────────────────────────── */
 export default function Home() {
-  const BACKEND_URL = process.env.NEXT_PUBLIC_TEE_BACKEND_URL ?? "http://localhost:8000";
+  const BACKEND_URL =
+    process.env.NEXT_PUBLIC_TEE_BACKEND_URL ?? "http://localhost:8000";
+  const ASK_PRICE_ETH = "2.5";
 
-  // --- STATE MANAGEMENT ---
   const [wallet, setWallet] = useState<string | null>(null);
-  const [realAddress, setRealAddress] = useState<string | null>(null); // İmza için gerçek adres lazım
-  const [messages, setMessages] = useState([
-    { role: 'system', text: '> System initialized inside Trusted Execution Environment (Dstack).' },
-    { role: 'system', text: '> Verifying remote attestation... OK.' },
-    { role: 'ai', text: '> Hello. I am the MindVault Arbiter. The seller has locked the codebase. Ask me anything about its logic or security.' }
-  ]);
+  const [realAddress, setRealAddress] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isTransactionPending, setIsTransactionPending] = useState(false);
-  const [releaseSignature, setReleaseSignature] = useState<string | null>(null); // AI'dan gelen imza
-  const [sellerCode, setSellerCode] = useState("");
-  const [isUploadPending, setIsUploadPending] = useState(false);
+  const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
   const [devProof, setDevProof] = useState<string | null>(null);
-  const [isSellerPanelOpen, setIsSellerPanelOpen] = useState(false);
 
-  // --- WALLET CONNECTION (ASC LOGIC) ---
+  const appendMessage = (message: ChatMessage) =>
+    setMessages((prev) => [...prev, message]);
+  const appendSystemLog = (text: string) =>
+    appendMessage({ role: "system", text });
+
   const connectWallet = async () => {
     const ethereum = window.ethereum;
-    if (!ethereum) {
-      alert("Please install MetaMask to use MindVault.");
-      return;
-    }
-
+    if (!ethereum) return alert("Please install MetaMask to use MindVault.");
     try {
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
-      
-      setRealAddress(address); // Arka planda gerçek adresi tutuyoruz (İmza için)
-      
-      // Ekranda doxxing olmasın diye maskelenmiş ASC adresini gösteriyoruz
-      const maskedAddress = `Anon_${address.substring(0, 4)}...${address.substring(address.length - 4)}`;
-      setWallet(maskedAddress);
+      setRealAddress(address);
+      setWallet(
+        `Anon_${address.substring(0, 4)}...${address.substring(address.length - 4)}`
+      );
     } catch (error: unknown) {
       console.error("Wallet connection failed:", error);
     }
   };
 
-  // --- SEND MESSAGE TO REAL DEEPSEEK AI ---
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    const userQuestion = inputValue.trim();
+    if (!userQuestion) return;
 
-    const newMessages = [...messages, { role: 'user', text: `> ${inputValue}` }];
-    setMessages(newMessages);
-    const userQuestion = inputValue;
+    appendMessage({ role: "user", text: `> ${userQuestion}` });
     setInputValue("");
     setIsLoading(true);
 
     try {
-      // 1. TEE Backend'e soruyu gönderiyoruz
       const response = await fetch(`${BACKEND_URL}/api/v1/ask-ndai`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: userQuestion }),
       });
-      
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail);
 
       let aiResponseText = `> ${data.agent_response}`;
-      
-      // 2. Eğer AI Onay verdiyse (Backend'in koyduğu gizli mesajı yakalıyoruz)
+
       if (aiResponseText.includes("Ready to sign.")) {
-        if (!realAddress) throw new Error("Wallet address is missing. Please reconnect your wallet.");
-        // AI onayladı! Hemen Oasis ROFL imzasını talep et
-        const sigResponse = await fetch(`${BACKEND_URL}/api/v1/sign-release`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ buyer_address: realAddress }),
-        });
-        
+        if (!realAddress)
+          throw new Error(
+            "Wallet address is missing. Please reconnect your wallet."
+          );
+        const sigResponse = await fetch(
+          `${BACKEND_URL}/api/v1/sign-release`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ buyer_address: realAddress }),
+          }
+        );
         const sigData = await sigResponse.json();
         if (sigResponse.ok && sigData.signature) {
-          setReleaseSignature(sigData.signature); // İmzayı state'e kaydet
+          setReleaseSignature(sigData.signature);
           aiResponseText += `\n\n[SYSTEM LOG: Cryptographic Signature Acquired: ${sigData.signature.substring(0, 20)}...]\n> You can now unlock the funds.`;
         }
       }
 
-      setMessages((prev) => [...prev, { role: 'ai', text: aiResponseText }]);
-
+      appendMessage({ role: "ai", text: aiResponseText });
     } catch (error: unknown) {
-      console.error("Failed to fetch AI response", error);
-      setMessages((prev) => [...prev, { role: 'system', text: `> ERROR: ${getErrorMessage(error)}` }]);
+      appendSystemLog(`> ERROR: ${getErrorMessage(error)}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- SELLER: UPLOAD CODE TO ENCLAVE ---
-  const handleUploadCode = async () => {
-    if (!sellerCode.trim()) return;
-    setIsUploadPending(true);
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/v1/upload-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_code: sellerCode }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail);
-
-      setDevProof(data.dev_proof ?? null);
-      setMessages((prev) => [
-        ...prev,
-        { role: 'system', text: `> SELLER: Code locked in enclave. Dev Proof: ${String(data.dev_proof ?? 'N/A')}` },
-      ]);
-    } catch (error: unknown) {
-      console.error("Failed to upload code", error);
-      setMessages((prev) => [...prev, { role: 'system', text: `> ERROR: ${getErrorMessage(error)}` }]);
-    } finally {
-      setIsUploadPending(false);
-    }
-  };
-
-  // --- SMART CONTRACT INTERACTION 1: LOCK FUNDS ---
   const handleLockFunds = async () => {
     const ethereum = window.ethereum;
     if (!ethereum) return alert("MetaMask is not installed!");
@@ -138,21 +192,23 @@ export default function Home() {
       setIsTransactionPending(true);
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();
-      const escrowContract = new ethers.Contract(ESCROW_CONTRACT_ADDRESS, ESCROW_ABI, signer);
-
-      const valueToLock = ethers.parseEther("2.5");
-      const tx = await escrowContract.lockFunds({ value: valueToLock });
+      const escrowContract = new ethers.Contract(
+        ESCROW_CONTRACT_ADDRESS,
+        ESCROW_ABI,
+        signer
+      );
+      const tx = await escrowContract.lockFunds({
+        value: ethers.parseEther(ASK_PRICE_ETH),
+      });
       await tx.wait();
-      
-      alert("Success! 2.5 ETH securely locked in the Smart Contract.");
+      appendSystemLog(`> ESCROW: Locked ${ASK_PRICE_ETH} ETH on-chain.`);
     } catch (error) {
-      console.error("Lock Transaction failed:", error);
+      appendSystemLog(`> ERROR: ${getErrorMessage(error)}`);
     } finally {
       setIsTransactionPending(false);
     }
   };
 
-  // --- SMART CONTRACT INTERACTION 2: RELEASE FUNDS WITH SIGNATURE ---
   const handleReleaseFunds = async () => {
     const ethereum = window.ethereum;
     if (!ethereum || !releaseSignature) return;
@@ -160,193 +216,310 @@ export default function Home() {
       setIsTransactionPending(true);
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();
-      const escrowContract = new ethers.Contract(ESCROW_CONTRACT_ADDRESS, ESCROW_ABI, signer);
-
-      console.log("Submitting TEE Signature to Blockchain...");
-      
-      // TEE'den gelen dijital imzayı akıllı kontrata veriyoruz
+      const escrowContract = new ethers.Contract(
+        ESCROW_CONTRACT_ADDRESS,
+        ESCROW_ABI,
+        signer
+      );
       const tx = await escrowContract.releaseFundsWithSignature(releaseSignature);
       await tx.wait();
-      
-      alert("DEAL COMPLETED! Signature verified by smart contract. Funds transferred to Seller and Code Unlocked!");
-      setReleaseSignature(null); // İşlem bitince imzayı temizle
+      appendSystemLog("> ESCROW: Deal completed. Signature verified, funds released.");
+      setReleaseSignature(null);
     } catch (error) {
-      console.error("Release Transaction failed:", error);
-      alert("Failed to release funds. Did you lock the funds first?");
+      appendSystemLog(`> ERROR: ${getErrorMessage(error)}`);
     } finally {
       setIsTransactionPending(false);
     }
   };
 
+  const resetSession = () => {
+    setMessages(INITIAL_MESSAGES);
+    setReleaseSignature(null);
+  };
+
+  const enclaveStatus = devProof ? "LOCKED" : "EMPTY";
+
   return (
-    <main className="min-h-screen px-5 py-10 text-emerald-100">
-      <div className="mx-auto w-full max-w-6xl">
-        {/* HEADER */}
-        <header className="mv-card px-6 py-5 mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-              MindVault Protocol
-            </h1>
-            <p className="text-sm mt-2 text-emerald-200/70">
-              Show the Proof, Hide the Logic. Powered by NDAI and ASC.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border px-3 py-1 text-emerald-100/80" style={{ borderColor: "var(--mv-border)" }}>
-                Backend: {BACKEND_URL}
-              </span>
-              <span className="rounded-full border px-3 py-1 text-emerald-100/80" style={{ borderColor: "var(--mv-border)" }}>
-                Enclave: {devProof ? "LOCKED" : "EMPTY"}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={connectWallet}
-            className="mv-btn w-full md:w-auto"
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: "2rem 1.25rem 3rem",
+        position: "relative",
+        zIndex: 1,
+      }}
+    >
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+
+        {/* ── HEADER ──────────────────────────────────────────────────── */}
+        <header className="mv-card mv-fade-up" style={{ padding: "1.75rem 2rem", marginBottom: "2rem" }}>
+
+          {/* Top row */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: "1.25rem",
+              marginBottom: "1.5rem",
+            }}
           >
-            {wallet ? `Connected: ${wallet}` : 'Connect ASC Wallet'}
-          </button>
-        </header>
-
-        {/* MAIN GRID SECTION */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-          {/* AI TERMINAL */}
-          <div className="col-span-2 mv-card p-4 h-[640px] flex flex-col">
-            <div className="border-b pb-3 mb-4 flex justify-between items-center" style={{ borderColor: "rgba(52, 211, 153, 0.18)" }}>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500/70"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/70"></span>
-                <span className="ml-3 text-xs text-emerald-200/55 mv-mono">root@tee-enclave:~# NDAI_SESSION_ACTIVE</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div className="mv-logomark">
+                <VaultIcon />
               </div>
-              <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></span>
-            </div>
-          
-            <div className="flex-grow overflow-y-auto space-y-4 text-sm flex flex-col whitespace-pre-wrap mv-mono pr-1">
-              {messages.map((msg, idx) => (
-                <p
-                  key={idx}
-                  className={
-                    msg.role === 'user'
-                      ? 'text-emerald-50'
-                      : msg.role === 'ai'
-                        ? 'text-emerald-200'
-                        : 'text-emerald-100/55'
-                  }
+              <div>
+                <h1
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "clamp(1.5rem, 4vw, 2.2rem)",
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    letterSpacing: "0.06em",
+                    lineHeight: 1,
+                  }}
                 >
-                  {msg.text}
+                  MindVault
+                </h1>
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "0.62rem",
+                    letterSpacing: "0.2em",
+                    color: "var(--gold-dim)",
+                    textTransform: "uppercase",
+                    marginTop: "0.3rem",
+                  }}
+                >
+                  Protocol v2.0 — Show the Proof, Hide the Logic
                 </p>
-              ))}
-              {isLoading && <p className="text-emerald-300 animate-pulse">{`> AI is analyzing the enclave...`}</p>}
+              </div>
             </div>
 
-            <form onSubmit={handleSendMessage} className="mt-4 flex gap-2 items-center border-t pt-4" style={{ borderColor: "rgba(52, 211, 153, 0.18)" }}>
-              <span className="text-emerald-300 font-bold mv-mono">{`>`}</span>
-              <input 
-                type="text" 
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Ask the AI to analyze, or type 'approve the transaction'..." 
-                className="w-full bg-black/20 rounded-lg border px-3 py-2 focus:outline-none focus:border-emerald-400 text-emerald-100 placeholder-emerald-200/20 mv-mono"
-                style={{ borderColor: "rgba(52, 211, 153, 0.22)" }}
-                disabled={!wallet || isLoading}
-              />
-              <button type="submit" className="hidden">Send</button>
-            </form>
-          </div>
-
-          {/* ESCROW STATUS PANEL */}
-          <div className="mv-card p-6 h-fit flex flex-col gap-6">
-            <h2 className="text-xl font-bold border-b pb-3 text-emerald-50" style={{ borderColor: "rgba(52, 211, 153, 0.18)" }}>
-              Escrow Status
-            </h2>
-          
-            <div className="space-y-4 text-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-emerald-100/60">Asking Price</span>
-                <span className="text-emerald-50 font-bold">2.5 ETH</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-emerald-100/60">Enclave</span>
-                <span className="text-emerald-50 font-bold">{devProof ? "LOCKED" : "EMPTY"}</span>
-              </div>
-              {devProof && (
-                <div className="text-xs text-emerald-100/55 break-all mv-mono">
-                  Dev Proof: <span className="text-emerald-100/80">{devProof}</span>
-                </div>
-              )}
-            </div>
-
-            {/* 1. LOCK FUNDS BUTTON */}
-            <button 
-              onClick={handleLockFunds}
-              disabled={!wallet || isTransactionPending}
-              className="mv-btn w-full py-3"
-              style={{
-                borderColor: wallet && !isTransactionPending ? "rgba(59, 130, 246, 0.55)" : "rgba(52, 211, 153, 0.15)",
-                background: wallet && !isTransactionPending ? "rgba(30, 64, 175, 0.55)" : "rgba(6, 20, 16, 0.45)",
-              }}
-            >
-              {isTransactionPending ? "Processing..." : "Step 1: Lock 2.5 ETH"}
-            </button>
-
-            {/* 2. RELEASE FUNDS BUTTON (Only active if AI gives signature) */}
-            <button 
-              onClick={handleReleaseFunds}
-              disabled={!releaseSignature || isTransactionPending}
-              className={`mv-btn w-full py-3 ${releaseSignature ? "animate-pulse" : ""}`}
-              style={{
-                borderColor: releaseSignature && !isTransactionPending ? "rgba(52, 211, 153, 0.55)" : "rgba(52, 211, 153, 0.15)",
-                background: releaseSignature && !isTransactionPending ? "rgba(4, 120, 87, 0.55)" : "rgba(6, 20, 16, 0.45)",
-              }}
-            >
-              {releaseSignature ? "Step 2: RELEASE FUNDS (AI Signed)" : "Awaiting AI Signature..."}
-            </button>
-          
-            <p className="text-xs text-emerald-100/45 text-center -mt-2">
-              AI signature required to unlock smart contract funds.
-            </p>
-
-            {/* SELLER PANEL (demo/local) */}
-            <div className="border-t pt-4" style={{ borderColor: "rgba(52, 211, 153, 0.18)" }}>
+            {/* Action buttons */}
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button
-                onClick={() => setIsSellerPanelOpen((v) => !v)}
-                className="w-full text-left text-sm font-bold text-emerald-50 flex items-center justify-between"
-                type="button"
+                onClick={connectWallet}
+                className={`mv-btn ${wallet ? "" : "mv-btn-gold"}`}
+                style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
               >
-                <span>Seller Panel (Local Demo)</span>
-                <span className="text-xs text-emerald-100/60 mv-mono">{isSellerPanelOpen ? "HIDE" : "SHOW"}</span>
+                <span style={{ width: "14px", height: "14px", display: "inline-flex" }}>
+                  <WalletIcon />
+                </span>
+                {wallet ? `${wallet}` : "Connect Wallet"}
               </button>
 
-              {isSellerPanelOpen && (
-                <div className="mt-3">
-                  <textarea
-                    value={sellerCode}
-                    onChange={(e) => setSellerCode(e.target.value)}
-                    placeholder="Paste source code here, then lock it into the enclave..."
-                    className="w-full min-h-[150px] bg-black/20 border rounded-lg p-3 text-xs text-emerald-100/85 placeholder-emerald-200/20 focus:outline-none focus:border-emerald-400 mv-mono"
-                    style={{ borderColor: "rgba(52, 211, 153, 0.22)" }}
-                    disabled={isUploadPending}
-                  />
-                  <button
-                    onClick={handleUploadCode}
-                    disabled={isUploadPending || !sellerCode.trim()}
-                    className="mv-btn mt-3 w-full py-3"
+              <a href="/upload" className="mv-btn" style={{ textDecoration: "none" }}>
+                Seller Dashboard
+              </a>
+
+              <button
+                onClick={resetSession}
+                className="mv-btn"
+                style={{
+                  borderColor: "rgba(0,255,135,0.08)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gap: "0.75rem",
+            }}
+          >
+            <StatCard
+              label="Ask Price"
+              value={`${ASK_PRICE_ETH} ETH`}
+              sub="per session"
+              gold
+            />
+            <StatCard
+              label="Enclave"
+              value={enclaveStatus}
+              sub={devProof ? "TEE active" : "awaiting code"}
+            />
+            <StatCard
+              label="Signature"
+              value={releaseSignature ? "READY" : "PENDING"}
+              sub={releaseSignature ? "ready to release" : "needs AI approval"}
+              gold={Boolean(releaseSignature)}
+            />
+            <div
+              style={{
+                background: "linear-gradient(145deg, rgba(10,21,24,0.9), rgba(6,14,16,0.95))",
+                border: "1px solid rgba(0,255,135,0.1)",
+                borderRadius: "12px",
+                padding: "0.85rem 1rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.2rem",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "0.6rem",
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Endpoint
+              </p>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.62rem",
+                  color: "var(--text-secondary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {BACKEND_URL}
+              </p>
+              <div className="mv-status mv-status-active" style={{ marginTop: "2px" }}>
+                <span className="mv-status-dot" />
+                <span style={{ color: "var(--phos-dim)" }}>online</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* ── MAIN GRID ────────────────────────────────────────────────── */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr minmax(280px, 360px)",
+            gap: "1.5rem",
+            alignItems: "start",
+          }}
+          className="mv-fade-up-1"
+        >
+          {/* Left: Terminal */}
+          <div>
+            {/* Section label */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              <span style={{ width: "18px", height: "18px", color: "var(--phos)", display: "inline-flex" }}>
+                <ChipIcon />
+              </span>
+              <p className="mv-panel-label" style={{ margin: 0 }}>
+                NDAI Terminal — Trusted Execution Environment
+              </p>
+            </div>
+
+            <div className="mv-card mv-glow-green">
+              <TerminalChat
+                messages={messages}
+                isLoading={isLoading}
+                inputValue={inputValue}
+                onInputChange={setInputValue}
+                onSubmit={handleSendMessage}
+                disabled={!wallet}
+              />
+
+              {!wallet && (
+                <div
+                  style={{
+                    padding: "0.75rem 1.25rem",
+                    background: "rgba(0,0,0,0.2)",
+                    borderTop: "1px solid rgba(0,255,135,0.06)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.6rem",
+                  }}
+                >
+                  <span
                     style={{
-                      borderColor: !isUploadPending && sellerCode.trim() ? "rgba(236, 72, 153, 0.45)" : "rgba(52, 211, 153, 0.15)",
-                      background: !isUploadPending && sellerCode.trim() ? "rgba(131, 24, 67, 0.55)" : "rgba(6, 20, 16, 0.45)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "0.65rem",
+                      color: "var(--text-muted)",
+                      letterSpacing: "0.08em",
                     }}
                   >
-                    {isUploadPending ? "Uploading..." : "Lock Code In Enclave"}
-                  </button>
-                  <p className="text-xs text-emerald-100/45 text-center mt-2">
-                    Uploads code to the backend in-memory enclave for demo purposes.
-                  </p>
+                    ⚠ Connect wallet to unlock the terminal
+                  </span>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Right: Escrow Panel */}
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              <span style={{ width: "18px", height: "18px", color: "var(--gold)", display: "inline-flex" }}>
+                <ShieldIcon />
+              </span>
+              <p className="mv-panel-label" style={{ margin: 0 }}>
+                On-Chain Escrow — Smart Contract
+              </p>
+            </div>
+
+            <div className="mv-card mv-glow-gold">
+              <EscrowPanel
+                askPriceEth={ASK_PRICE_ETH}
+                devProof={devProof}
+                releaseSignature={releaseSignature}
+                walletConnected={Boolean(wallet)}
+                isTransactionPending={isTransactionPending}
+                onLockFunds={handleLockFunds}
+                onReleaseFunds={handleReleaseFunds}
+                backendUrl={BACKEND_URL}
+                onDevProof={setDevProof}
+                onSystemLog={appendSystemLog}
+              />
             </div>
           </div>
         </div>
+
+        {/* ── FOOTER ───────────────────────────────────────────────────── */}
+        <footer
+          style={{
+            marginTop: "3rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+          className="mv-fade-up-4"
+        >
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "0.6rem",
+              color: "var(--text-muted)",
+              letterSpacing: "0.1em",
+            }}
+          >
+            © 2024 MindVault Protocol — Powered by NDAI & ASC
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <span className="mv-badge">TEE / Oasis ROFL</span>
+            <span className="mv-badge mv-badge-gold">Escrow v1.0</span>
+          </div>
+        </footer>
       </div>
     </main>
   );
