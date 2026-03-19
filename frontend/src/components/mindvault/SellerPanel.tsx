@@ -10,6 +10,7 @@ type Props = {
 };
 
 export function SellerPanel({ backendUrl: _backendUrl, onDevProof, onSystemLog }: Props) {
+  void _backendUrl;
   const [isOpen, setIsOpen] = useState(false);
   const [sourceCode, setSourceCode] = useState("");
   const [isUploading, setIsUploading] = useState(false);

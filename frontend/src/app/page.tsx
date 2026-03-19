@@ -3,10 +3,16 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { ESCROW_ADDRESS_CANDIDATES, ESCROW_CONTRACT_ADDRESS, ESCROW_ABI } from '../lib/constants';
+import {
+  ESCROW_ADDRESS_CANDIDATES,
+  ESCROW_CONTRACT_ADDRESS,
+  ESCROW_ABI,
+  TEE_ORACLE_ADDRESS,
+} from '../lib/constants';
 
 const ANVIL_CHAIN_ID = 31337;
 const ANVIL_CHAIN_HEX = '0x7a69';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 export default function Home() {
   const [wallet, setWallet] = useState<string | null>(null);
@@ -22,7 +28,7 @@ export default function Home() {
   const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
   const [resolvedEscrowAddress, setResolvedEscrowAddress] = useState<string>(ESCROW_CONTRACT_ADDRESS);
 
-  // Otomatik aşağı kaydırma için
+  // Auto-scroll to the latest message.
   const messagesEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -37,17 +43,26 @@ export default function Home() {
     return String(error);
   };
 
+  const getErrorCode = (error: unknown): number | undefined => {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+      return undefined;
+    }
+
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'number' ? code : undefined;
+  };
+
   const ensureAnvilNetwork = async () => {
     if (!window.ethereum) throw new Error("MetaMask is not installed.");
 
-    const ethereum = window.ethereum as any;
+    const ethereum = window.ethereum;
     try {
       await ethereum.request({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: ANVIL_CHAIN_HEX }],
       });
-    } catch (error: any) {
-      if (error?.code === 4902) {
+    } catch (error: unknown) {
+      if (getErrorCode(error) === 4902) {
         await ethereum.request({
           method: "wallet_addEthereumChain",
           params: [
@@ -72,19 +87,37 @@ export default function Home() {
         (candidate) => candidate.toLowerCase() !== resolvedEscrowAddress.toLowerCase(),
       ),
     ];
+    const mismatchedOracleContracts: string[] = [];
 
     for (const candidate of candidates) {
       const code = await provider.getCode(candidate);
-      if (code !== '0x') {
-        if (candidate.toLowerCase() !== resolvedEscrowAddress.toLowerCase()) {
-          setResolvedEscrowAddress(candidate);
-        }
-        return candidate;
+      if (code === '0x') {
+        continue;
       }
+
+      try {
+        const contract = new ethers.Contract(candidate, ESCROW_ABI, provider);
+        const contractOracle: string = await contract.teeOracle();
+        if (contractOracle.toLowerCase() !== TEE_ORACLE_ADDRESS.toLowerCase()) {
+          mismatchedOracleContracts.push(`${candidate} (teeOracle=${contractOracle})`);
+          continue;
+        }
+      } catch {
+        mismatchedOracleContracts.push(`${candidate} (teeOracle unreadable)`);
+        continue;
+      }
+
+      if (candidate.toLowerCase() !== resolvedEscrowAddress.toLowerCase()) {
+        setResolvedEscrowAddress(candidate);
+      }
+      return candidate;
     }
 
+    const mismatchNote = mismatchedOracleContracts.length
+      ? ` Found contracts with mismatched TEE oracle: ${mismatchedOracleContracts.join(', ')}.`
+      : '';
     throw new Error(
-      `Escrow contract not found. Checked: ${candidates.join(', ')}. Run Anvil + deploy script, then set NEXT_PUBLIC_ESCROW_CONTRACT_ADDRESS.`,
+      `Escrow contract not found for TEE oracle ${TEE_ORACLE_ADDRESS}. Checked: ${candidates.join(', ')}.${mismatchNote} Run Anvil + deploy script, then set NEXT_PUBLIC_ESCROW_CONTRACT_ADDRESS.`,
     );
   };
 
@@ -92,7 +125,7 @@ export default function Home() {
     if (typeof window.ethereum !== 'undefined') {
       try {
         await ensureAnvilNetwork();
-        const provider = new ethers.BrowserProvider(window.ethereum as any);
+        const provider = new ethers.BrowserProvider(window.ethereum);
         const network = await provider.getNetwork();
         if (Number(network.chainId) !== ANVIL_CHAIN_ID) {
           throw new Error(`Wrong network. Please switch to Anvil (chainId ${ANVIL_CHAIN_ID}).`);
@@ -133,27 +166,47 @@ export default function Home() {
 
       let aiResponseText = data.agent_response;
 
-      if (realAddress) {
-        const sigResponse = await fetch("/api/v1/sign-release", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ buyer_address: realAddress }),
-        });
-        const sigData = await sigResponse.json();
+      if (realAddress && window.ethereum) {
+        try {
+          await ensureAnvilNetwork();
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const escrowAddress = await resolveEscrowAddress(provider);
+          const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, provider);
+          const onchainBuyer: string = await escrowContract.buyer();
 
-        if (sigResponse.ok && sigData.signature) {
-          const signature = String(sigData.signature);
-          setReleaseSignature(signature);
-          aiResponseText += `\n\n[SYSTEM LOG: Cryptographic Signature Acquired: ${signature.substring(0, 16)}...]`;
-        } else if (sigResponse.status === 403) {
-          aiResponseText += "\n\n[SYSTEM LOG: Approval not ready. Ask the AI to explicitly approve release if code is safe.]";
-        } else if (sigResponse.status !== 403 && sigData?.detail) {
-          aiResponseText += `\n\n[SYSTEM LOG: Signature attempt failed: ${sigData.detail}]`;
+          if (onchainBuyer === ZERO_ADDRESS) {
+            aiResponseText += "\n\n[SYSTEM LOG: No buyer locked in escrow yet. Complete Step 1 first.]";
+          } else {
+            if (onchainBuyer.toLowerCase() !== realAddress.toLowerCase()) {
+              aiResponseText += `\n\n[SYSTEM LOG: Wallet differs from escrow buyer. Requesting signature for on-chain buyer ${onchainBuyer}.]`;
+            }
+
+            const sigResponse = await fetch("/api/v1/sign-release", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ buyer_address: onchainBuyer }),
+            });
+            const sigData = await sigResponse.json();
+
+            if (sigResponse.ok && sigData.signature) {
+              const signature = String(sigData.signature);
+              setReleaseSignature(signature);
+              aiResponseText += `\n\n[SYSTEM LOG: Cryptographic Signature Acquired: ${signature.substring(0, 16)}...]`;
+            } else if (sigResponse.status === 403) {
+              aiResponseText += "\n\n[SYSTEM LOG: Approval not ready. Ask the AI to explicitly approve release if code is safe.]";
+            } else if (sigData?.detail) {
+              aiResponseText += `\n\n[SYSTEM LOG: Signature attempt failed: ${sigData.detail}]`;
+            }
+          }
+        } catch (error: unknown) {
+          const message = getErrorMessage(error);
+          aiResponseText += `\n\n[SYSTEM LOG: Signature pre-check failed: ${message}]`;
         }
       }
       setMessages(prev => [...prev, { role: 'ai', text: aiResponseText }]);
-    } catch (error: any) {
-      setMessages(prev => [...prev, { role: 'system', text: `ERROR: ${error.message}` }]);
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      setMessages(prev => [...prev, { role: 'system', text: `ERROR: ${message}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -164,7 +217,7 @@ export default function Home() {
     try {
       setIsTransactionPending(true);
       await ensureAnvilNetwork();
-      const provider = new ethers.BrowserProvider(window.ethereum as any);
+      const provider = new ethers.BrowserProvider(window.ethereum);
       const escrowAddress = await resolveEscrowAddress(provider);
       const signer = await provider.getSigner();
       const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, signer);
@@ -193,10 +246,19 @@ export default function Home() {
     try {
       setIsTransactionPending(true);
       await ensureAnvilNetwork();
-      const provider = new ethers.BrowserProvider(window.ethereum as any);
+      const provider = new ethers.BrowserProvider(window.ethereum);
       const escrowAddress = await resolveEscrowAddress(provider);
       const signer = await provider.getSigner();
       const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, signer);
+      const onchainBuyer: string = await escrowContract.buyer();
+      if (onchainBuyer === ZERO_ADDRESS) {
+        throw new Error("No buyer found in escrow. Lock funds first.");
+      }
+      const currentlyLockedAmount: bigint = await escrowContract.lockedAmount();
+      if (currentlyLockedAmount === BigInt(0)) {
+        throw new Error("No locked funds found in escrow.");
+      }
+
       const tx = await escrowContract.releaseFundsWithSignature(releaseSignature);
       await tx.wait();
       alert("DEAL COMPLETED! Funds transferred and Code Unlocked!");

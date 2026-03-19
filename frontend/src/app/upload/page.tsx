@@ -24,8 +24,9 @@ export default function UploadPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Upload failed");
       setDevProof(data.dev_proof);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
     } finally {
       setIsUploading(false);
     }
