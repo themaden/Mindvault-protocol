@@ -3,7 +3,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { ESCROW_CONTRACT_ADDRESS, ESCROW_ABI } from '../lib/constants';
+import { ESCROW_ADDRESS_CANDIDATES, ESCROW_CONTRACT_ADDRESS, ESCROW_ABI } from '../lib/constants';
+
+const ANVIL_CHAIN_ID = 31337;
+const ANVIL_CHAIN_HEX = '0x7a69';
 
 export default function Home() {
   const [wallet, setWallet] = useState<string | null>(null);
@@ -17,6 +20,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isTransactionPending, setIsTransactionPending] = useState(false);
   const [releaseSignature, setReleaseSignature] = useState<string | null>(null);
+  const [resolvedEscrowAddress, setResolvedEscrowAddress] = useState<string>(ESCROW_CONTRACT_ADDRESS);
 
   // Otomatik aşağı kaydırma için
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -24,16 +28,83 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error && error.message) return error.message;
+    if (typeof error === 'object' && error !== null && 'shortMessage' in error) {
+      const shortMessage = (error as { shortMessage?: string }).shortMessage;
+      if (shortMessage) return shortMessage;
+    }
+    return String(error);
+  };
+
+  const ensureAnvilNetwork = async () => {
+    if (!window.ethereum) throw new Error("MetaMask is not installed.");
+
+    const ethereum = window.ethereum as any;
+    try {
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: ANVIL_CHAIN_HEX }],
+      });
+    } catch (error: any) {
+      if (error?.code === 4902) {
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: ANVIL_CHAIN_HEX,
+              chainName: "Anvil Local",
+              rpcUrls: ["http://127.0.0.1:8545"],
+              nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            },
+          ],
+        });
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  const resolveEscrowAddress = async (provider: ethers.BrowserProvider): Promise<string> => {
+    const candidates = [
+      resolvedEscrowAddress,
+      ...ESCROW_ADDRESS_CANDIDATES.filter(
+        (candidate) => candidate.toLowerCase() !== resolvedEscrowAddress.toLowerCase(),
+      ),
+    ];
+
+    for (const candidate of candidates) {
+      const code = await provider.getCode(candidate);
+      if (code !== '0x') {
+        if (candidate.toLowerCase() !== resolvedEscrowAddress.toLowerCase()) {
+          setResolvedEscrowAddress(candidate);
+        }
+        return candidate;
+      }
+    }
+
+    throw new Error(
+      `Escrow contract not found. Checked: ${candidates.join(', ')}. Run Anvil + deploy script, then set NEXT_PUBLIC_ESCROW_CONTRACT_ADDRESS.`,
+    );
+  };
+
   const connectWallet = async () => {
     if (typeof window.ethereum !== 'undefined') {
       try {
+        await ensureAnvilNetwork();
         const provider = new ethers.BrowserProvider(window.ethereum as any);
+        const network = await provider.getNetwork();
+        if (Number(network.chainId) !== ANVIL_CHAIN_ID) {
+          throw new Error(`Wrong network. Please switch to Anvil (chainId ${ANVIL_CHAIN_ID}).`);
+        }
         const signer = await provider.getSigner();
         const address = await signer.getAddress();
         setRealAddress(address);
         const maskedAddress = `Anon_${address.substring(0, 4)}...${address.substring(address.length - 4)}`;
         setWallet(maskedAddress);
       } catch (error) {
+        const message = getErrorMessage(error);
+        setMessages(prev => [...prev, { role: 'system', text: `ERROR: Wallet connect failed: ${message}` }]);
         console.error("Wallet connection failed:", error);
       }
     } else {
@@ -51,7 +122,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/ask-ndai", {
+      const response = await fetch("/api/v1/ask-ndai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: userQuestion }),
@@ -61,18 +132,23 @@ export default function Home() {
       if (!response.ok) throw new Error(data.detail);
 
       let aiResponseText = data.agent_response;
-      
-      if (aiResponseText.includes("Ready to sign.")) {
-        const sigResponse = await fetch("http://localhost:8000/api/v1/sign-release", {
+
+      if (realAddress) {
+        const sigResponse = await fetch("/api/v1/sign-release", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ buyer_address: realAddress }),
         });
-        
         const sigData = await sigResponse.json();
+
         if (sigResponse.ok && sigData.signature) {
-          setReleaseSignature(sigData.signature);
-          aiResponseText += `\n\n[SYSTEM LOG: Cryptographic Signature Acquired: ${sigData.signature.substring(0, 16)}...]`;
+          const signature = String(sigData.signature);
+          setReleaseSignature(signature);
+          aiResponseText += `\n\n[SYSTEM LOG: Cryptographic Signature Acquired: ${signature.substring(0, 16)}...]`;
+        } else if (sigResponse.status === 403) {
+          aiResponseText += "\n\n[SYSTEM LOG: Approval not ready. Ask the AI to explicitly approve release if code is safe.]";
+        } else if (sigResponse.status !== 403 && sigData?.detail) {
+          aiResponseText += `\n\n[SYSTEM LOG: Signature attempt failed: ${sigData.detail}]`;
         }
       }
       setMessages(prev => [...prev, { role: 'ai', text: aiResponseText }]);
@@ -87,13 +163,25 @@ export default function Home() {
     if (!window.ethereum) return alert("MetaMask is not installed!");
     try {
       setIsTransactionPending(true);
+      await ensureAnvilNetwork();
       const provider = new ethers.BrowserProvider(window.ethereum as any);
+      const escrowAddress = await resolveEscrowAddress(provider);
       const signer = await provider.getSigner();
-      const escrowContract = new ethers.Contract(ESCROW_CONTRACT_ADDRESS, ESCROW_ABI, signer);
+      const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, signer);
+      const currentlyLockedAmount: bigint = await escrowContract.lockedAmount();
+
+      if (currentlyLockedAmount > BigInt(0)) {
+        throw new Error(
+          `Funds already locked on ${escrowAddress}. Complete Step 2 (AI signature + release), or restart Anvil and redeploy for a fresh contract state.`,
+        );
+      }
+
       const tx = await escrowContract.lockFunds({ value: ethers.parseEther("2.5") });
       await tx.wait();
       alert("Success! 2.5 ETH securely locked.");
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      setMessages(prev => [...prev, { role: 'system', text: `ERROR: Lock funds failed: ${message}` }]);
       console.error("Transaction failed:", error);
     } finally {
       setIsTransactionPending(false);
@@ -104,14 +192,18 @@ export default function Home() {
     if (!window.ethereum || !releaseSignature) return;
     try {
       setIsTransactionPending(true);
+      await ensureAnvilNetwork();
       const provider = new ethers.BrowserProvider(window.ethereum as any);
+      const escrowAddress = await resolveEscrowAddress(provider);
       const signer = await provider.getSigner();
-      const escrowContract = new ethers.Contract(ESCROW_CONTRACT_ADDRESS, ESCROW_ABI, signer);
+      const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, signer);
       const tx = await escrowContract.releaseFundsWithSignature(releaseSignature);
       await tx.wait();
       alert("DEAL COMPLETED! Funds transferred and Code Unlocked!");
       setReleaseSignature(null);
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      setMessages(prev => [...prev, { role: 'system', text: `ERROR: Release failed: ${message}` }]);
       console.error("Release failed:", error);
     } finally {
       setIsTransactionPending(false);

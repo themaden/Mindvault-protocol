@@ -9,7 +9,7 @@ type Props = {
   onSystemLog: (text: string) => void;
 };
 
-export function SellerPanel({ backendUrl, onDevProof, onSystemLog }: Props) {
+export function SellerPanel({ backendUrl: _backendUrl, onDevProof, onSystemLog }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [sourceCode, setSourceCode] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -21,7 +21,7 @@ export function SellerPanel({ backendUrl, onDevProof, onSystemLog }: Props) {
     setError(null);
 
     try {
-      const response = await fetch(`${backendUrl}/api/v1/upload-code`, {
+      const response = await fetch("/api/v1/upload-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_code: sourceCode }),
@@ -94,4 +94,3 @@ export function SellerPanel({ backendUrl, onDevProof, onSystemLog }: Props) {
     </div>
   );
 }
-

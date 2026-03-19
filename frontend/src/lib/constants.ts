@@ -1,8 +1,19 @@
 // frontend/src/lib/constants.ts
 
-// Hackathon için yerel ağda (Anvil/Hardhat) deploy edilen varsayılan ilk kontrat adresi.
-// Gerçek ağa (Oasis Sapphire vb.) yüklediğimizde burayı değiştireceğiz.
-export const ESCROW_CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; 
+const LOCAL_ESCROW_FALLBACK_ADDRESSES = [
+  "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512", // Foundry default local deploy
+  "0x5FbDB2315678afecb367f032d93F642f64180aa3", // Hardhat default local deploy
+];
+
+export const ESCROW_CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_ESCROW_CONTRACT_ADDRESS ?? LOCAL_ESCROW_FALLBACK_ADDRESSES[0];
+
+export const ESCROW_ADDRESS_CANDIDATES = [
+  ESCROW_CONTRACT_ADDRESS,
+  ...LOCAL_ESCROW_FALLBACK_ADDRESSES.filter(
+    (address) => address.toLowerCase() !== ESCROW_CONTRACT_ADDRESS.toLowerCase(),
+  ),
+];
 
 // Ethers.js için okunabilir (Human-Readable) ABI formatı.
 // Sadece Frontend'in kullanacağı fonksiyonları tanımlamamız yeterlidir.

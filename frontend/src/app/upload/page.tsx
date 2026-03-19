@@ -16,7 +16,7 @@ export default function UploadPage() {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/upload-code", {
+      const response = await fetch("/api/v1/upload-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_code: sourceCode }),

@@ -48,4 +48,3 @@ export function CopyField({ label, value }: Props) {
     </div>
   );
 }
-
