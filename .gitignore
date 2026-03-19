@@ -12,6 +12,8 @@ frontend/out/
 tee-backend/__pycache__/
 tee-backend/venv/
 tee-backend/.env
+venv/
+.venv/
 
 # Hardhat/Foundry (Smart Contracts) artifacts
 contracts/artifacts/
