@@ -11,8 +11,8 @@ contract DeployMindVault is Script {
         // (Never use this on a real network, it is only for local testing!)
         uint256 deployerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         
-        // TEE Oracle Address (the address given by our Python backend during startup)
-        address teeOracle = 0x1234567890123456789012345678901234567890;
+        // TEE Oracle Address (derived from TEE_PRIVATE_KEY in tee-backend/main.py)
+        address teeOracle = 0xFCAd0B19bB29D4674531d6f115237E16AfCE377c;
 
         // We start the broadcast. Everything after this point will be written to the blockchain.
         vm.startBroadcast(deployerPrivateKey);
